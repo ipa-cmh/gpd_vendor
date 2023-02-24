@@ -1,20 +1,26 @@
 cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
-project(gpd)
+project(gpd_vendor)
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_CXX_STANDARD 14)
+set(PNAME gpd)
 
-# Eigen library
-include_directories(${EIGEN3_INCLUDE_DIR})
-
+find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_ros REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(VTK REQUIRED)
 # PCL
-find_package(PCL 1.9 REQUIRED)
+find_package(PCL 1.9 REQUIRED COMPONENTS common visualization io filters surface keypoints features segmentation search kdtree octree registration)
 #find_package(PCL 1.8 REQUIRED)
-include_directories(${PCL_INCLUDE_DIRS})
-link_directories(${PCL_LIBRARY_DIRS})
-add_definitions(${PCL_DEFINITIONS})
 
 # OpenCV
 find_package(OpenCV REQUIRED)
+
+set(deps
+  "Eigen3"
+  "PCL"
+  "OpenCV"
+  "VTK"
+)
 #find_package(OpenCV REQUIRED PATHS /usr/local NO_DEFAULT_PATH)
 
 ## Set compiler optimization flags
@@ -29,7 +35,7 @@ find_package(OpenCV REQUIRED)
 set(CMAKE_CXX_FLAGS "-O3 -march=native -mtune=intel -msse4.2 -mavx2 -mfma -flto -fopenmp -fPIC -Wno-deprecated -Wenum-compare -Wno-ignored-attributes -std=c++17")
 
 ## Specify additional locations of header files
-include_directories(include ${PCL_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
+#include_directories(include ${PCL_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 
 # Classifier depends on what libraries are installed.
 option(USE_OPENVINO "use classifier based on OpenVINO toolkit" OFF)
@@ -46,8 +52,8 @@ if(USE_OPENVINO STREQUAL "ON")
   get_filename_component(MODELS_DIR "models/openvino" ABSOLUTE)
   configure_file(include/gpd/net/openvino_classifier.h.in gpd/net/openvino_classifier.h)
   include_directories(${CMAKE_CURRENT_BINARY_DIR})
-  set(classifier_src src/${PROJECT_NAME}/net/classifier.cpp src/${PROJECT_NAME}/net/openvino_classifier.cpp)
-  set(classifier_dep ${InferenceEngine_LIBRARIES})
+  set(classifier_src src/${PNAME}/net/classifier.cpp src/${PNAME}/net/openvino_classifier.cpp)
+  set(classifier_ament "InferenceEngine")
   message("Using OpenVINO")
 elseif(USE_CAFFE STREQUAL "ON")
   find_package(Caffe)
@@ -57,15 +63,16 @@ elseif(USE_CAFFE STREQUAL "ON")
   include_directories(${Caffe_INCLUDE_DIRS})
   add_definitions(${Caffe_DEFINITIONS})
   add_definitions(-DUSE_CAFFE)
-  set(classifier_src src/${PROJECT_NAME}/net/classifier.cpp src/${PROJECT_NAME}/net/caffe_classifier.cpp)
-  set(classifier_dep ${Caffe_LIBRARIES} ${OpenCV_LIBRARIES})
+  set(classifier_src src/${PNAME}/net/classifier.cpp src/${PNAME}/net/caffe_classifier.cpp)
+  set(classifier_ament "Caffe" "OpenCV")
 elseif(USE_OPENCV STREQUAL "ON")
   message(FATAL_ERROR "Not supported yet")
 else()
-  add_library(${PROJECT_NAME}_conv_layer src/${PROJECT_NAME}/net/conv_layer.cpp)
-  add_library(${PROJECT_NAME}_dense_layer src/${PROJECT_NAME}/net/dense_layer.cpp)
-  set(classifier_src src/${PROJECT_NAME}/net/classifier.cpp src/${PROJECT_NAME}/net/eigen_classifier.cpp)
-  set(classifier_dep ${PROJECT_NAME}_conv_layer ${PROJECT_NAME}_dense_layer ${OpenCV_LIBRARIES})
+  set(classifier_src 
+    "src/${PNAME}/net/classifier.cpp"
+    "src/${PNAME}/net/eigen_classifier.cpp"
+    "src/${PNAME}/net/conv_layer.cpp"
+    "src/${PNAME}/net/dense_layer.cpp")
 endif()
 
 # Optional PCL GPU operations
@@ -83,221 +90,151 @@ endif()
 # Optional data generation (requires OpenCV Contrib)
 option(BUILD_DATA_GENERATION "build data generation (requires OpenCV Contrib for HDF5)" OFF)
 if(BUILD_DATA_GENERATION STREQUAL "ON")
-  add_library(${PROJECT_NAME}_data_generator src/${PROJECT_NAME}/data_generator.cpp)
-  target_link_libraries(${PROJECT_NAME}_data_generator
-   ${PROJECT_NAME}_grasp_detector
-   ${PCL_LIBRARIES}
-   ${OpenCV_LIBS})
-  add_executable(${PROJECT_NAME}_generate_data src/generate_data.cpp)
-  target_link_libraries(${PROJECT_NAME}_generate_data
-   ${PROJECT_NAME}_data_generator)
+  add_library(${PNAME}_data_generator STATIC src/${PNAME}/data_generator.cpp)
+  target_link_libraries(${PNAME}_data_generator
+   ${PNAME}_grasp_detector)
+  ament_target_dependencies(${PNAME}_data_generator
+    PCL
+    OpenCV
+    Eigen3)
+  add_executable(${PNAME}_generate_data src/generate_data.cpp)
+  target_link_libraries(${PNAME}_generate_data
+   ${PNAME}_data_generator)
   message("Building data generation module")
 endif()
 
 # Generate the shared library from the sources
-add_library(${PROJECT_NAME}_grasp_detector SHARED src/${PROJECT_NAME}/grasp_detector.cpp)
+add_library(${PNAME}_grasp_detector SHARED 
+  src/${PNAME}/grasp_detector.cpp
+  src/${PNAME}/clustering.cpp
+  src/${PNAME}/sequential_importance_sampling.cpp
+  src/${PNAME}/candidate/antipodal.cpp
+  src/${PNAME}/candidate/candidates_generator.cpp
+  src/${PNAME}/candidate/finger_hand.cpp
+  src/${PNAME}/candidate/frame_estimator.cpp
+  src/${PNAME}/candidate/hand.cpp
+  src/${PNAME}/candidate/hand_set.cpp
+  src/${PNAME}/candidate/hand_geometry.cpp
+  src/${PNAME}/candidate/hand_search.cpp
+  src/${PNAME}/candidate/local_frame.cpp
+  src/${PNAME}/util/cloud.cpp
+  src/${PNAME}/util/config_file.cpp
+  src/${PNAME}/util/eigen_utils.cpp
+  src/${PNAME}/util/plot.cpp
+  src/${PNAME}/util/point_list.cpp
+  src/${PNAME}/descriptor/image_strategy.cpp
+  src/${PNAME}/descriptor/image_1_channels_strategy.cpp
+  src/${PNAME}/descriptor/image_3_channels_strategy.cpp
+  src/${PNAME}/descriptor/image_12_channels_strategy.cpp
+  src/${PNAME}/descriptor/image_15_channels_strategy.cpp
+  src/${PNAME}/descriptor/image_geometry.cpp
+  src/${PNAME}/descriptor/image_generator.cpp
+  ${classifier_src}
+)
+target_include_directories(${PNAME}_grasp_detector PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  ${Eigen3_INCLUDE_DIRS}
+  )
+target_compile_features(${PNAME}_grasp_detector PUBLIC c_std_99 cxx_std_14)
+target_compile_options(${PNAME}_grasp_detector PUBLIC -fPIC -Wl,--no-undefined)
+target_compile_definitions(${PNAME}_grasp_detector PUBLIC
+  ${PCL_DEFINITIONS}
+  ${OpenCV_DEFINITIONS}
+  ${Eigen3_DEFINITIONS}
+  )
+target_link_libraries(${PNAME}_grasp_detector
+  ${PCL_LIBRARIES}
+  ${OpenCV_LIBS}
+  ${Eigen3_LIBRARIES}
+  )
 
-add_library(${PROJECT_NAME}_classifier ${classifier_src})
-target_link_libraries(${PROJECT_NAME}_classifier
-                      ${classifier_dep})
 
-add_library(${PROJECT_NAME}_clustering src/${PROJECT_NAME}/clustering.cpp)
-add_library(${PROJECT_NAME}_sequential_importance_sampling src/${PROJECT_NAME}/sequential_importance_sampling.cpp)
 
-# namespace candidate
-add_library(${PROJECT_NAME}_antipodal src/${PROJECT_NAME}/candidate/antipodal.cpp)
-add_library(${PROJECT_NAME}_candidates_generator src/${PROJECT_NAME}/candidate/candidates_generator.cpp)
-add_library(${PROJECT_NAME}_finger_hand src/${PROJECT_NAME}/candidate/finger_hand.cpp)
-add_library(${PROJECT_NAME}_frame_estimator src/${PROJECT_NAME}/candidate/frame_estimator.cpp)
-add_library(${PROJECT_NAME}_hand src/${PROJECT_NAME}/candidate/hand.cpp)
-add_library(${PROJECT_NAME}_hand_set src/${PROJECT_NAME}/candidate/hand_set.cpp)
-add_library(${PROJECT_NAME}_hand_geometry src/${PROJECT_NAME}/candidate/hand_geometry.cpp)
-add_library(${PROJECT_NAME}_hand_search src/${PROJECT_NAME}/candidate/hand_search.cpp)
-add_library(${PROJECT_NAME}_local_frame src/${PROJECT_NAME}/candidate/local_frame.cpp)
-
-# namespace util
-add_library(${PROJECT_NAME}_cloud src/${PROJECT_NAME}/util/cloud.cpp)
-add_library(${PROJECT_NAME}_config_file src/${PROJECT_NAME}/util/config_file.cpp)
-add_library(${PROJECT_NAME}_eigen_utils src/${PROJECT_NAME}/util/eigen_utils.cpp)
-add_library(${PROJECT_NAME}_plot src/${PROJECT_NAME}/util/plot.cpp)
-add_library(${PROJECT_NAME}_point_list src/${PROJECT_NAME}/util/point_list.cpp)
-
-# namespace descriptor
-add_library(${PROJECT_NAME}_image_strategy src/${PROJECT_NAME}/descriptor/image_strategy.cpp)
-add_library(${PROJECT_NAME}_image_1_channels_strategy src/${PROJECT_NAME}/descriptor/image_1_channels_strategy.cpp)
-add_library(${PROJECT_NAME}_image_3_channels_strategy src/${PROJECT_NAME}/descriptor/image_3_channels_strategy.cpp)
-add_library(${PROJECT_NAME}_image_12_channels_strategy src/${PROJECT_NAME}/descriptor/image_12_channels_strategy.cpp)
-add_library(${PROJECT_NAME}_image_15_channels_strategy src/${PROJECT_NAME}/descriptor/image_15_channels_strategy.cpp)
-add_library(${PROJECT_NAME}_image_geometry src/${PROJECT_NAME}/descriptor/image_geometry.cpp)
-
-add_library(${PROJECT_NAME}_image_generator src/${PROJECT_NAME}/descriptor/image_generator.cpp)
 
 ## Declare C++ executables
-add_executable(${PROJECT_NAME}_cem_detect_grasps src/cem_detect_grasps.cpp)
-add_executable(${PROJECT_NAME}_detect_grasps src/detect_grasps.cpp)
-add_executable(${PROJECT_NAME}_generate_candidates src/generate_candidates.cpp)
-add_executable(${PROJECT_NAME}_label_grasps src/label_grasps.cpp)
-add_executable(${PROJECT_NAME}_test_grasp_image src/tests/test_grasp_image.cpp)
-# add_executable(${PROJECT_NAME}_test_conv_layer src/tests/test_conv_layer.cpp)
-# add_executable(${PROJECT_NAME}_test_hdf5 src/tests/test_hdf5.cpp)
+add_executable(${PNAME}_cem_detect_grasps src/cem_detect_grasps.cpp)
+target_include_directories(${PNAME}_cem_detect_grasps PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(${PNAME}_cem_detect_grasps PUBLIC c_std_99 cxx_std_14)
+target_compile_options(${PNAME}_cem_detect_grasps PUBLIC -fPIC -Wl,--no-undefined)
+target_link_libraries(${PNAME}_cem_detect_grasps
+  ${PNAME}_grasp_detector)
+ament_target_dependencies(${PNAME}_cem_detect_grasps ${deps})
 
+add_executable(${PNAME}_detect_grasps src/detect_grasps.cpp)
+target_include_directories(${PNAME}_detect_grasps PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(${PNAME}_detect_grasps PUBLIC c_std_99 cxx_std_14)
+target_compile_options(${PNAME}_detect_grasps PUBLIC -fPIC -Wl,--no-undefined)
+target_link_libraries(${PNAME}_detect_grasps
+  ${PNAME}_grasp_detector)
+ament_target_dependencies(${PNAME}_detect_grasps ${deps})
 
-## Specify libraries to link a library or executable target against
-target_link_libraries(${PROJECT_NAME}_clustering
-${PROJECT_NAME}_hand)
+add_executable(${PNAME}_generate_candidates src/generate_candidates.cpp)
+target_include_directories(${PNAME}_generate_candidates PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(${PNAME}_generate_candidates PUBLIC c_std_99 cxx_std_14)
+target_compile_options(${PNAME}_generate_candidates PUBLIC -fPIC -Wl,--no-undefined)
+target_link_libraries(${PNAME}_generate_candidates
+  ${PNAME}_grasp_detector)
+ament_target_dependencies(${PNAME}_generate_candidates ${deps})
 
-target_link_libraries(${PROJECT_NAME}_grasp_detector
-  ${PROJECT_NAME}_clustering
-  ${PROJECT_NAME}_image_generator
-  ${PROJECT_NAME}_classifier
-  ${PROJECT_NAME}_candidates_generator
-  ${PROJECT_NAME}_hand_geometry
-  ${PROJECT_NAME}_hand_set
-  ${PROJECT_NAME}_config_file
-  ${PROJECT_NAME}_plot)
+add_executable(${PNAME}_label_grasps src/label_grasps.cpp)
+target_include_directories(${PNAME}_label_grasps PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(${PNAME}_label_grasps PUBLIC c_std_99 cxx_std_14)
+target_compile_options(${PNAME}_label_grasps PUBLIC -fPIC -Wl,--no-undefined)
+target_link_libraries(${PNAME}_label_grasps
+  ${PNAME}_grasp_detector)
+ament_target_dependencies(${PNAME}_label_grasps ${deps})
 
-target_link_libraries(${PROJECT_NAME}_generate_candidates
-  ${PROJECT_NAME}_config_file
-${PROJECT_NAME}_candidates_generator)
-
-# Linking for libraries
-target_link_libraries(${PROJECT_NAME}_antipodal
-${PROJECT_NAME}_point_list)
-
-target_link_libraries(${PROJECT_NAME}_cloud
-  ${PROJECT_NAME}_eigen_utils
-  ${PCL_LIBRARIES})
-
-target_link_libraries(${PROJECT_NAME}_eigen_utils
-${EIGEN_LIBRARIES})
-
-target_link_libraries(${PROJECT_NAME}_frame_estimator
-  ${PROJECT_NAME}_cloud
-${PROJECT_NAME}_local_frame)
-
-target_link_libraries(${PROJECT_NAME}_hand
-${PROJECT_NAME}_finger_hand)
-
-target_link_libraries(${PROJECT_NAME}_hand_set
-  ${PROJECT_NAME}_antipodal
-  ${PROJECT_NAME}_config_file
-  ${PROJECT_NAME}_hand
-  ${PROJECT_NAME}_hand_geometry
-  ${PROJECT_NAME}_local_frame
-${PROJECT_NAME}_point_list)
-
-target_link_libraries(${PROJECT_NAME}_hand_geometry
-${PROJECT_NAME}_config_file)
-
-target_link_libraries(${PROJECT_NAME}_hand_search
-  ${PROJECT_NAME}_antipodal
-  ${PROJECT_NAME}_cloud
-  ${PROJECT_NAME}_frame_estimator
-  ${PROJECT_NAME}_hand_set
-  ${PROJECT_NAME}_hand_geometry
-  ${PROJECT_NAME}_plot)
-
-target_link_libraries(${PROJECT_NAME}_plot
-  ${PROJECT_NAME}_cloud
-  ${PROJECT_NAME}_hand_set
-  ${PROJECT_NAME}_image_geometry
-${PROJECT_NAME}_local_frame)
-
-target_link_libraries(${PROJECT_NAME}_candidates_generator
-  ${PROJECT_NAME}_config_file
-  ${PROJECT_NAME}_hand_geometry
-${PROJECT_NAME}_hand_search)
-
-target_link_libraries(${PROJECT_NAME}_point_list
-${PROJECT_NAME}_eigen_utils)
-
-target_link_libraries(${PROJECT_NAME}_image_strategy
-  ${PROJECT_NAME}_image_geometry
-  ${PROJECT_NAME}_image_1_channels_strategy
-  ${PROJECT_NAME}_image_3_channels_strategy
-  ${PROJECT_NAME}_image_12_channels_strategy
-  ${PROJECT_NAME}_image_15_channels_strategy
-  ${PROJECT_NAME}_hand_set
-${OpenCV_LIBS})
-
-
-target_link_libraries(${PROJECT_NAME}_image_1_channels_strategy
-${PROJECT_NAME}_image_strategy)
-
-target_link_libraries(${PROJECT_NAME}_image_3_channels_strategy
-${PROJECT_NAME}_image_strategy)
-
-target_link_libraries(${PROJECT_NAME}_image_12_channels_strategy
-${PROJECT_NAME}_image_strategy)
-
-target_link_libraries(${PROJECT_NAME}_image_15_channels_strategy
-${PROJECT_NAME}_image_strategy)
-
-target_link_libraries(${PROJECT_NAME}_image_geometry
-${PROJECT_NAME}_config_file)
-
-target_link_libraries(${PROJECT_NAME}_image_generator
-  ${PROJECT_NAME}_image_strategy
-  ${PROJECT_NAME}_hand_set
-  ${PROJECT_NAME}_image_strategy
-  ${PROJECT_NAME}_cloud
-${PROJECT_NAME}_eigen_utils)
-
-target_link_libraries(${PROJECT_NAME}_sequential_importance_sampling
-  ${PROJECT_NAME}_grasp_detector)
-
-target_link_libraries(${PROJECT_NAME}_test_grasp_image
-  ${PROJECT_NAME}_image_generator
-  ${PROJECT_NAME}_classifier
-  ${PROJECT_NAME}_plot
-  ${PROJECT_NAME}_candidates_generator
-${PCL_LIBRARIES})
-
-target_link_libraries(${PROJECT_NAME}_detect_grasps
-  ${PROJECT_NAME}_grasp_detector
-  ${PROJECT_NAME}_config_file
-${PCL_LIBRARIES})
-
-target_link_libraries(${PROJECT_NAME}_label_grasps
-  ${PROJECT_NAME}_grasp_detector
-  ${PROJECT_NAME}_config_file
-${PCL_LIBRARIES})
-
-target_link_libraries(${PROJECT_NAME}_cem_detect_grasps
-  ${PROJECT_NAME}_sequential_importance_sampling
-  ${PROJECT_NAME}_config_file
-  ${PCL_LIBRARIES})
-
-target_link_libraries(${PROJECT_NAME}_image_generator
-  ${PROJECT_NAME}_hand_set
-  ${PROJECT_NAME}_image_strategy)
-
-# Rename targets to simplify their names.
-set_target_properties(${PROJECT_NAME}_test_grasp_image
-  PROPERTIES OUTPUT_NAME test_grasp_image PREFIX "")
-
-set_target_properties(${PROJECT_NAME}_cem_detect_grasps
-  PROPERTIES OUTPUT_NAME cem_detect_grasps PREFIX "")
-
-set_target_properties(${PROJECT_NAME}_detect_grasps
-  PROPERTIES OUTPUT_NAME detect_grasps PREFIX "")
-
-set_target_properties(${PROJECT_NAME}_generate_candidates
-  PROPERTIES OUTPUT_NAME generate_candidates PREFIX "")
-
-if(BUILD_DATA_GENERATION STREQUAL "ON")
-  set_target_properties(${PROJECT_NAME}_generate_data
-    PROPERTIES OUTPUT_NAME generate_data PREFIX "")
-endif()
-
-set_target_properties(${PROJECT_NAME}_label_grasps
-  PROPERTIES OUTPUT_NAME label_grasps PREFIX "")
-
-set_target_properties(${PROJECT_NAME}_grasp_detector
-  PROPERTIES OUTPUT_NAME gpd)
+add_executable(${PNAME}_test_grasp_image src/tests/test_grasp_image.cpp)
+target_include_directories(${PNAME}_test_grasp_image PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(${PNAME}_test_grasp_image PUBLIC c_std_99 cxx_std_14)
+target_compile_options(${PNAME}_test_grasp_image PUBLIC -fPIC -Wl,--no-undefined)
+target_link_libraries(${PNAME}_test_grasp_image
+  ${PNAME}_grasp_detector)
+ament_target_dependencies(${PNAME}_test_grasp_image ${deps})
 
 
 # Set the location for library installation
-install(TARGETS ${PROJECT_NAME}_grasp_detector DESTINATION lib)
+install(TARGETS 
+  ${PNAME}_grasp_detector
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
+
+install(TARGETS ${PNAME}_test_grasp_image ${PNAME}_label_grasps ${PNAME}_generate_candidates ${PNAME}_detect_grasps ${PNAME}_cem_detect_grasps
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 install(DIRECTORY include/gpd DESTINATION include)
+
+ament_export_include_directories(
+  include
+)
+ament_export_libraries(
+  ${PNAME}_grasp_detector
+)
+
+ament_export_targets(
+  export_${PROJECT_NAME}
+)
+
+ament_export_dependencies(
+  "Eigen3"
+  "PCL"
+  "OpenCV"
+)
+
+ament_package()

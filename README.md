@@ -1,4 +1,4 @@
-# Grasp Pose Detection (GPD)
+# Grasp Pose Detection (GPD) - wrapped as Colcon Pacakge
 
 * [Author's website](http://www.ccs.neu.edu/home/atp/)
 * [License](https://github.com/atenpas/gpd/blob/master/LICENSE.md)
@@ -26,17 +26,21 @@ The reference for this package is:
 [Grasp Pose Detection in Point Clouds](http://arxiv.org/abs/1706.09911).
 
 ## Table of Contents
-1. [Requirements](#requirements)
-1. [Installation](#install)
-1. [Generate Grasps for a Point Cloud File](#pcd)
-1. [Parameters](#parameters)
-1. [Views](#views)
-1. [Input Channels for Neural Network](#cnn_channels)
-1. [CNN Frameworks](#cnn_frameworks)
-1. [Network Training](#net_train)
-1. [Grasp Image](#descriptor)
-1. [References](#References)
-1. [Troubleshooting](#troubleshooting)
+- [Grasp Pose Detection (GPD) - wrapped as Colcon Pacakge](#grasp-pose-detection-gpd---wrapped-as-colcon-pacakge)
+        - [Example Input and Output](#example-input-and-output)
+  - [Table of Contents](#table-of-contents)
+  - [1) Requirements](#1-requirements)
+  - [2) Installation](#2-installation)
+  - [3) Generate Grasps for a Point Cloud File](#3-generate-grasps-for-a-point-cloud-file)
+  - [4) Parameters](#4-parameters)
+  - [5) Views](#5-views)
+  - [6) Input Channels for Neural Network](#6-input-channels-for-neural-network)
+  - [7) CNN Frameworks](#7-cnn-frameworks)
+        - [OpenVINO](#openvino)
+  - [8) Network Training](#8-network-training)
+  - [9) Grasp Image/Descriptor](#9-grasp-imagedescriptor)
+  - [10) References](#10-references)
+  - [11) Troubleshooting Tips](#11-troubleshooting-tips)
 
 <a name="requirements"></a>
 ## 1) Requirements
